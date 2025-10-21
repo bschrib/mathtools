@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Interactive Linear Graph Generator — Fixed Export</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background: #f7f7f7;
+    margin: 0;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 { margin-top: 0; text-align: center; }
+  #controls {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    width: 100%;
+    max-width: 760px;
+  }
+  label { display: block; margin-top: 0.5rem; font-size: 0.95rem; }
+  input[type="number"], input[type="text"], select {
+    width: 100%;
+    padding: 6px 8px;
+    margin-top: 6px;
+    border-radius: 6px;
+    border: 1px solid #dcdcdc;
+    font-size: 0.95rem;
+    box-sizing: border-box;
+  }
+  .controls-row { display:flex; gap:0.5rem; align-items:center; margin-top:0.5rem; }
+  .controls-row > * { flex: 1; }
+  button {
+    margin-top: 0.9rem;
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
+    border: none;
+    border-radius: 8px;
+    background-color: #0078d7;
+    color: white;
+    cursor: pointer;
+  }
+  button.secondary { background: #444; }
+  button:hover { filter: brightness(0.95); }
+  #graph { 
+    width: 90%; 
+    max-width: 900px; 
+    height: 700px; 
+    background: white; 
+    border-radius: 8px; 
+    overflow:hidden; 
+    margin-bottom: 1rem;
+  }
+  .formula-input { margin-top: 6px; }
+  #saveControls { 
+    margin-top: 0.6rem; 
+    display:flex; 
+    gap:0.5rem; 
+    align-items:center; 
+    flex-wrap: wrap;
+  }
+  #saveControls label {
+    margin: 0;
+    flex: 1;
+    min-width: 120px;
+  }
+  .instructions {
+    background: #e9f7fe;
+    border-left: 4px solid #0078d4;
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 0 8px 8px 0;
+    max-width: 760px;
+  }
+  .instructions h3 {
+    margin-top: 0;
+    color: #0078d4;
+  }
+  .instructions ul {
+    padding-left: 1.5rem;
+  }
+  .instructions li {
+    margin-bottom: 0.5rem;
+  }
+  @media (max-width: 600px) {
+    .controls-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    #saveControls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    #saveControls label {
+      min-width: auto;
+    }
+  }
+</style>
+</head>
+<body>
+  <h1>Interactive Linear Graph Generator</h1>
+  
+  <div class="instructions">
+    <h3>How to Use This Tool</h3>
+    <ul>
+      <li>Adjust the number of lines and axis ranges using the controls below</li>
+      <li>Enter linear equations in the form "y = mx + b" (e.g., "y = 2x + 1")</li>
+      <li>Click "Generate Graph" to create your graph</li>
+      <li>Use "Randomize Formulas" to generate new equations</li>
+      <li>Click "Download Graph" to save your graph as an image</li>
+    </ul>
+  </div>
+  
+  <div id="controls">
+    <div class="controls-row">
+      <div>
+        <label for="numLines">Number of Lines:</label>
+        <input type="number" id="numLines" min="1" max="5" value="2">
+      </div>
+      <div>
+        <label for="axisMin">Axis Min:</label>
+        <input type="number" id="axisMin" value="-10">
+      </div>
+      <div>
+        <label for="axisMax">Axis Max:</label>
+        <input type="number" id="axisMax" value="10">
+      </div>
+    </div>
+    
+    <div id="formulas">
+      <!-- Formula inputs will be generated here -->
+    </div>
+    
+    <div id="saveControls">
+      <label for="fileType">Download Format:</label>
+      <select id="fileType">
+        <option value="png">PNG</option>
+        <option value="jpeg">JPEG</option>
+        <option value="webp">WebP</option>
+      </select>
+      <button id="generateBtn">Generate Graph</button>
+      <button id="randomizeBtn" class="secondary">Randomize Formulas</button>
+      <button id="saveBtn">Download Graph</button>
+    </div>
+  </div>
+  
+  <div id="graph"></div>
+
+  <script>
+    // Generate formula inputs based on number of lines
+    function generateFormulaInputs() {
+      const num = parseInt(document.getElementById('numLines').value);
+      const formulasDiv = document.getElementById('formulas');
+      formulasDiv.innerHTML = '';
+      
+      for (let i = 0; i < num; i++) {
+        const div = document.createElement('div');
+        div.innerHTML = `
+          <label for="formula${i}">Line ${i+1} Equation (y = mx + b):</label>
+          <input type="text" id="formula${i}" class="formula-input" value="y = x">
+        `;
+        formulasDiv.appendChild(div);
+      }
+    }
+    
+    // Parse equation string to extract m and b
+    function parseEquation(eq) {
+      // Normalize the equation
+      eq = eq.toLowerCase().replace(/\s/g, '');
+      
+      // Handle y = mx + b format
+      if (eq.startsWith('y=')) {
+        eq = eq.substring(2);
+      }
+      
+      // Handle case where there's no coefficient for x
+      if (eq.includes('x') && !eq.includes('x+')) {
+        eq = eq.replace('x', '1x');
+      }
+      
+      // Extract m and b
+      let m = 1;
+      let b = 0;
+      
+      // Handle cases like "2x+3", "x-5", "-x+2", etc.
+      if (eq.includes('x')) {
+        const parts = eq.split('x');
+        if (parts[0] === '' || parts[0] === '+') {
+          m = 1;
+        } else if (parts[0] === '-') {
+          m = -1;
+        } else {
+          m = parseFloat(parts[0]);
+        }
+        
+        if (parts[1] !== '') {
+          b = parseFloat(parts[1]);
+        }
+      } else {
+        // Handle constant equations like "5"
+        b = parseFloat(eq);
+      }
+      
+      return {m, b};
+    }
+    
+    // Create axis shapes and annotations
+    function createAxisShapesAndAnnotations(axisMin, axisMax) {
+      const shapes = [];
+      const annotations = [];
+      
+      // Draw grid lines
+      const step = Math.max(1, Math.floor((axisMax - axisMin) / 10));
+      for (let i = Math.ceil(axisMin / step) * step; i <= axisMax; i += step) {
+        // Vertical lines
+        shapes.push({
+          type: 'line',
+          x0: i, y0: axisMin,
+          x1: i, y1: axisMax,
+          line: {color: '#ddd', width: 1}
+        });
+        
+        // Horizontal lines
+        shapes.push({
+          type: 'line',
+          x0: axisMin, y0: i,
+          x1: axisMax, y1: i,
+          line: {color: '#ddd', width: 1}
+        });
+        
+        // Tick labels - positioned along the axes instead of outside
+        if (i !== 0) {
+          // X-axis labels (positioned along the X-axis)
+          annotations.push({
+            x: i, y: -0.5,
+            xref: 'x', yref: 'y',
+            text: String(i),
+            showarrow: false,
+            font: {color: 'black', size: 10}
+          });
+          
+          // Y-axis labels (positioned along the Y-axis)
+          annotations.push({
+            x: -0.5, y: i,
+            xref: 'x', yref: 'y',
+            text: String(i),
+            showarrow: false,
+            font: {color: 'black', size: 10}
+          });
+        }
+      }
+      
+      // Draw axes
+      shapes.push({
+        type: 'line',
+        x0: axisMin, y0: 0,
+        x1: axisMax, y1: 0,
+        line: {color: 'black', width: 1.5}
+      });
+      
+      shapes.push({
+        type: 'line',
+        x0: 0, y0: axisMin,
+        x1: 0, y1: axisMax,
+        line: {color: 'black', width: 1.5}
+      });
+      
+      // Origin label
+      annotations.push({
+        x: -0.5, y: -0.5,
+        xref: 'x', yref: 'y',
+        text: '0',
+        showarrow: false,
+        font: {color: 'black', size: 12}
+      });
+      
+      return { shapes, annotations };
+    }
+    
+    // Generate the graph
+    function generateGraph() {
+      const num = parseInt(document.getElementById('numLines').value);
+      const axisMin = parseFloat(document.getElementById('axisMin').value);
+      const axisMax = parseFloat(document.getElementById('axisMax').value);
+      
+      if (axisMax <= axisMin) { 
+        alert('Axis Max must be greater than Axis Min'); 
+        return; 
+      }
+      
+      const formulaEls = Array.from(document.querySelectorAll('.formula-input'));
+      const formulas = formulaEls.map(el => el.value);
+      
+      // Create x vector
+      const samples = 800;
+      const x = [];
+      for (let i = 0; i < samples; i++) {
+        x.push(axisMin + i * (axisMax - axisMin) / (samples - 1));
+      }
+      
+      const colors = ['#d62828','#0b5fff','#198754','#ff8f1c','#6a42b3'];
+      const data = [];
+      
+      // Lines
+      formulas.forEach((eq, idx) => {
+        const {m, b} = parseEquation(eq);
+        const y = x.map(v => m * v + b);
+        data.push({
+          x, y,
+          mode: 'lines',
+          line: {color: colors[idx % colors.length], width: 2.8},
+          name: eq
+        });
+      });
+      
+      // Shapes and annotations (grid, axes, ticks, labels)
+      const { shapes, annotations } = createAxisShapesAndAnnotations(axisMin, axisMax);
+      
+      // Layout with explicit white background for both plot and paper
+      const layout = {
+        xaxis: {
+          range: [axisMin, axisMax],
+          showgrid: false,
+          zeroline: false,
+          showticklabels: false,
+          fixedrange: true
+        },
+        yaxis: {
+          range: [axisMin, axisMax],
+          showgrid: false,
+          zeroline: false,
+          showticklabels: false,
+          fixedrange: true,
+          scaleanchor: "x",
+          scaleratio: 1
+        },
+        shapes: shapes,
+        annotations: annotations,
+        plot_bgcolor: 'white',
+        paper_bgcolor: 'white',
+        margin: {t: 30, b: 40, l: 50, r: 20},
+        showlegend: true
+      };
+      
+      // Update graph
+      Plotly.newPlot('graph', data, layout, {responsive: true});
+    }
+    
+    // Download graph as image
+    function downloadGraph() {
+      const format = document.getElementById('fileType').value;
+      const filename = `linear-graph-${Date.now()}.${format}`;
+      
+      Plotly.toImage('graph', {
+        format: format,
+        width: 800,
+        height: 600
+      }).then(function(imageData) {
+        const link = document.createElement('a');
+        link.href = imageData;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+      generateFormulaInputs();
+      
+      // Event listeners
+      document.getElementById('numLines').addEventListener('change', generateFormulaInputs);
+      document.getElementById('generateBtn').addEventListener('click', generateGraph);
+      document.getElementById('randomizeBtn').addEventListener('click', function() {
+        const num = parseInt(document.getElementById('numLines').value);
+        const formulas = document.querySelectorAll('.formula-input');
+        const operations = ['+', '-', ''];
+        const signs = ['+', '-'];
+        
+        formulas.forEach(input => {
+          const m = Math.floor(Math.random() * 5) + 1;
+          const b = Math.floor(Math.random() * 10) - 5;
+          const sign = signs[Math.floor(Math.random() * signs.length)];
+          
+          if (m === 1) {
+            input.value = `y = x ${sign} ${Math.abs(b)}`;
+          } else {
+            input.value = `y = ${m}x ${sign} ${Math.abs(b)}`;
+          }
+        });
+        
+        generateGraph();
+      });
+      document.getElementById('saveBtn').addEventListener('click', downloadGraph);
+      
+      // Generate initial graph
+      generateGraph();
+    });
+  </script>
+  
+  <!-- Include Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</body>
+</html>
