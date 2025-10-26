@@ -240,14 +240,16 @@ export default function GraphGenerator() {
       line: { color: settings.axisColor, width: 1.5 }
     })
     
-    // Origin label
-    annotations.push({
-      x: -0.5, y: -0.5,
-      xref: 'x', yref: 'y',
-      text: '0',
-      showarrow: false,
-      font: { color: settings.textColor, size: 12 }
-    })
+    // Origin label (only show when labels are positioned along axis)
+    if (settings.showLabels && settings.labelPosition === 'axis') {
+      annotations.push({
+        x: -0.5, y: -0.5,
+        xref: 'x', yref: 'y',
+        text: '0',
+        showarrow: false,
+        font: { color: settings.textColor, size: 12 }
+      })
+    }
     
     // Add lines
     lines.filter(line => line.visible).forEach((line) => {
@@ -430,9 +432,6 @@ export default function GraphGenerator() {
                 </Button>
                 <Button onClick={addLine} className="w-full" variant="outline">
                   Add New Line
-                </Button>
-                <Button onClick={generateGraph} className="w-full" disabled={isGenerating}>
-                  {isGenerating ? 'Generating...' : 'Generate Graph'}
                 </Button>
               </CardContent>
             </Card>
