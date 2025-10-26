@@ -9,13 +9,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { useTheme } from 'next-themes'
-import { Moon, Sun, Download, Shuffle, RefreshCw, Settings } from 'lucide-react'
+import { Moon, Sun, Download, Shuffle, RefreshCw, Settings, Eye, EyeOff } from 'lucide-react'
 
 interface Line {
   id: string
   equation: string
   color: string
   visible: boolean
+  equationType: 'whole' | 'fraction' | 'decimal'
 }
 
 interface GraphSettings {
@@ -58,6 +59,7 @@ export default function GraphGenerator() {
   })
   const [fileFormat, setFileFormat] = useState('png')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [showAnswer, setShowAnswer] = useState(false)
   const graphRef = useRef<HTMLDivElement>(null)
 
   // Initialize with 2 random lines on mount
@@ -65,42 +67,93 @@ export default function GraphGenerator() {
     generateRandomLines(2)
   }, [])
 
+  // Generate equation based on type
+  const generateEquation = (type: 'whole' | 'fraction' | 'decimal'): string => {
+    let slope: number
+    let intercept: number
+    
+    switch (type) {
+      case 'whole':
+        const wholeSlopes = [-3, -2, -1, 0, 1, 2, 3]
+        slope = wholeSlopes[Math.floor(Math.random() * wholeSlopes.length)]
+        intercept = Math.floor(Math.random() * 20) - 10
+        break
+      
+      case 'fraction':
+        const fractionSlopes = [-3/2, -2/3, -1/2, -1/3, 0, 1/3, 1/2, 2/3, 3/2]
+        slope = fractionSlopes[Math.floor(Math.random() * fractionSlopes.length)]
+        intercept = Math.floor(Math.random() * 20) - 10
+        break
+      
+      case 'decimal':
+        const decimalSlopes = [-2.5, -1.5, -0.5, 0, 0.5, 1.5, 2.5]
+        slope = decimalSlopes[Math.floor(Math.random() * decimalSlopes.length)]
+        intercept = Math.floor(Math.random() * 20) - 10
+        break
+    }
+    
+    // Format equation based on type
+    let equation = ''
+    if (slope === 0) {
+      equation = `y = ${intercept}`
+    } else if (Math.abs(slope) === 1) {
+      const sign = slope < 0 ? '-' : ''
+      if (intercept === 0) {
+        equation = `y = ${sign}x`
+      } else if (intercept > 0) {
+        equation = `y = ${sign}x + ${intercept}`
+      } else {
+        equation = `y = ${sign}x - ${Math.abs(intercept)}`
+      }
+    } else {
+      let slopeStr = ''
+      if (type === 'fraction') {
+        // Convert to fraction format
+        const absSlope = Math.abs(slope)
+        if (absSlope < 1) {
+          const denominator = Math.round(1 / absSlope)
+          slopeStr = slope < 0 ? `-1/${denominator}` : `1/${denominator}`
+        } else {
+          const wholePart = Math.floor(absSlope)
+          const remainder = absSlope - wholePart
+          if (remainder === 0) {
+            slopeStr = slope < 0 ? `-${wholePart}` : `${wholePart}`
+          } else {
+            const denominator = Math.round(1 / remainder)
+            slopeStr = slope < 0 ? `-${wholePart} ${1}/${denominator}` : `${wholePart} ${1}/${denominator}`
+          }
+        }
+      } else {
+        slopeStr = slope.toString()
+      }
+      
+      if (intercept === 0) {
+        equation = `y = ${slopeStr}x`
+      } else if (intercept > 0) {
+        equation = `y = ${slopeStr}x + ${intercept}`
+      } else {
+        equation = `y = ${slopeStr}x - ${Math.abs(intercept)}`
+      }
+    }
+    
+    return equation
+  }
+
   // Generate truly random lines with varied slopes and directions
   const generateRandomLines = (count: number = lines.length) => {
     const newLines: Line[] = []
+    const types: Array<'whole' | 'fraction' | 'decimal'> = ['whole', 'fraction', 'decimal']
     
     for (let i = 0; i < count; i++) {
-      // Generate more diverse slopes including negative, zero, and steep values
-      const slopeOptions = [-5, -3, -2, -1, -0.5, 0, 0.5, 1, 2, 3, 5]
-      const slope = slopeOptions[Math.floor(Math.random() * slopeOptions.length)]
-      
-      // Generate intercept that creates interesting intersections
-      const intercept = Math.floor(Math.random() * 20) - 10
-      
-      let equation = ''
-      if (slope === 0) {
-        equation = `y = ${intercept}`
-      } else if (slope === 1) {
-        equation = intercept >= 0 ? `y = x + ${intercept}` : `y = x - ${Math.abs(intercept)}`
-      } else if (slope === -1) {
-        equation = intercept >= 0 ? `y = -x + ${intercept}` : `y = -x - ${Math.abs(intercept)}`
-      } else {
-        const absSlope = Math.abs(slope)
-        const sign = slope < 0 ? '-' : '+'
-        if (intercept === 0) {
-          equation = `y = ${slope}x`
-        } else if (intercept > 0) {
-          equation = `y = ${slope}x + ${intercept}`
-        } else {
-          equation = `y = ${slope}x - ${Math.abs(intercept)}`
-        }
-      }
+      const equationType = types[Math.floor(Math.random() * types.length)]
+      const equation = generateEquation(equationType)
       
       newLines.push({
         id: `line-${i}`,
         equation,
         color: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
-        visible: true
+        visible: true,
+        equationType
       })
     }
     
@@ -308,17 +361,167 @@ export default function GraphGenerator() {
     
     const filename = `linear-graph-${Date.now()}.${fileFormat}`
     
-    window.Plotly.toImage(graphRef.current, {
-      format: fileFormat,
-      width: 800,
-      height: 600
-    }).then(function(imageData: string) {
-      const link = document.createElement('a')
-      link.href = imageData
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+    // Create a temporary graph for download with modified legend if answers are hidden
+    const tempDiv = document.createElement('div')
+    tempDiv.style.width = '800px'
+    tempDiv.style.height = '600px'
+    tempDiv.style.position = 'absolute'
+    tempDiv.style.left = '-9999px'
+    document.body.appendChild(tempDiv)
+    
+    // Get current graph data
+    const samples = 800
+    const x = []
+    for (let i = 0; i < samples; i++) {
+      x.push(settings.axisMin + i * (settings.axisMax - settings.axisMin) / (samples - 1))
+    }
+    
+    const data = []
+    const shapes = []
+    const annotations = []
+    
+    // Recreate the graph structure (copy from generateGraph)
+    if (settings.showGrid) {
+      const step = Math.max(1, Math.floor((settings.axisMax - settings.axisMin) / 10))
+      for (let i = Math.ceil(settings.axisMin / step) * step; i <= settings.axisMax; i += step) {
+        shapes.push({
+          type: 'line',
+          x0: i, y0: settings.axisMin,
+          x1: i, y1: settings.axisMax,
+          line: { color: settings.gridColor, width: 1 }
+        })
+        shapes.push({
+          type: 'line',
+          x0: settings.axisMin, y0: i,
+          x1: settings.axisMax, y1: i,
+          line: { color: settings.gridColor, width: 1 }
+        })
+      }
+    }
+    
+    if (settings.showLabels) {
+      const step = Math.max(1, Math.floor((settings.axisMax - settings.axisMin) / 10))
+      for (let i = Math.ceil(settings.axisMin / step) * step; i <= settings.axisMax; i += step) {
+        if (i !== 0) {
+          if (settings.labelPosition === 'axis') {
+            annotations.push({
+              x: i, y: -0.5,
+              xref: 'x', yref: 'y',
+              text: String(i),
+              showarrow: false,
+              font: { color: settings.textColor, size: 10 }
+            })
+            annotations.push({
+              x: -0.5, y: i,
+              xref: 'x', yref: 'y',
+              text: String(i),
+              showarrow: false,
+              font: { color: settings.textColor, size: 10 }
+            })
+          } else {
+            annotations.push({
+              x: i, y: settings.axisMin,
+              xref: 'x', yref: 'y',
+              text: String(i),
+              showarrow: false,
+              font: { color: settings.textColor, size: 10 },
+              yshift: -15
+            })
+            annotations.push({
+              x: settings.axisMin, y: i,
+              xref: 'x', yref: 'y',
+              text: String(i),
+              showarrow: false,
+              font: { color: settings.textColor, size: 10 },
+              xshift: -15
+            })
+          }
+        }
+      }
+    }
+    
+    shapes.push({
+      type: 'line',
+      x0: settings.axisMin, y0: 0,
+      x1: settings.axisMax, y1: 0,
+      line: { color: settings.axisColor, width: 1.5 }
+    })
+    
+    shapes.push({
+      type: 'line',
+      x0: 0, y0: settings.axisMin,
+      x1: 0, y1: settings.axisMax,
+      line: { color: settings.axisColor, width: 1.5 }
+    })
+    
+    if (settings.showLabels && settings.labelPosition === 'axis') {
+      annotations.push({
+        x: -0.5, y: -0.5,
+        xref: 'x', yref: 'y',
+        text: '0',
+        showarrow: false,
+        font: { color: settings.textColor, size: 12 }
+      })
+    }
+    
+    // Add lines with modified legend based on showAnswer state
+    lines.filter(line => line.visible).forEach((line, index) => {
+      const { m, b } = parseEquation(line.equation)
+      const y = x.map(v => m * v + b)
+      
+      data.push({
+        x, y,
+        mode: 'lines',
+        line: { color: line.color, width: settings.lineWidth },
+        name: showAnswer ? line.equation : `Line ${index + 1}`
+      })
+    })
+    
+    const layout = {
+      xaxis: {
+        range: [settings.axisMin, settings.axisMax],
+        showgrid: false,
+        zeroline: false,
+        showticklabels: false,
+        fixedrange: true
+      },
+      yaxis: {
+        range: [settings.axisMin, settings.axisMax],
+        showgrid: false,
+        zeroline: false,
+        showticklabels: false,
+        fixedrange: true,
+        scaleanchor: "x",
+        scaleratio: 1
+      },
+      shapes: shapes,
+      annotations: annotations,
+      plot_bgcolor: theme === 'dark' ? '#1f2937' : 'white',
+      paper_bgcolor: theme === 'dark' ? '#111827' : 'white',
+      margin: { t: 30, b: 40, l: 50, r: 20 },
+      showlegend: true,
+      legend: {
+        bgcolor: theme === 'dark' ? '#1f2937' : 'white',
+        bordercolor: theme === 'dark' ? '#374151' : '#e5e7eb',
+        borderwidth: 1
+      }
+    }
+    
+    // Create the temporary graph and download
+    window.Plotly.newPlot(tempDiv, data, layout, { responsive: false }).then(() => {
+      window.Plotly.toImage(tempDiv, {
+        format: fileFormat,
+        width: 800,
+        height: 600
+      }).then(function(imageData: string) {
+        const link = document.createElement('a')
+        link.href = imageData
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        document.body.removeChild(tempDiv)
+      })
     })
   }
 
@@ -327,6 +530,17 @@ export default function GraphGenerator() {
     setLines(prev => prev.map(line => 
       line.id === id ? { ...line, equation } : line
     ))
+  }
+
+  // Update line equation type
+  const updateLineType = (id: string, equationType: 'whole' | 'fraction' | 'decimal') => {
+    setLines(prev => prev.map(line => {
+      if (line.id === id) {
+        const newEquation = generateEquation(equationType)
+        return { ...line, equationType, equation: newEquation }
+      }
+      return line
+    }))
   }
 
   // Toggle line visibility
@@ -342,7 +556,8 @@ export default function GraphGenerator() {
       id: `line-${Date.now()}`,
       equation: 'y = x',
       color: DEFAULT_COLORS[lines.length % DEFAULT_COLORS.length],
-      visible: true
+      visible: true,
+      equationType: 'whole'
     }
     setLines(prev => [...prev, newLine])
   }
@@ -356,12 +571,28 @@ export default function GraphGenerator() {
   const applyTemplate = (template: typeof PRESET_TEMPLATES[0]) => {
     if (template.name === 'Random Challenge') {
       generateRandomLines(3)
+    } else if (template.name === 'System of Equations') {
+      // For System of Equations, create a proper mix: whole, fraction, decimal
+      const equationTypes: Array<'whole' | 'fraction' | 'decimal'> = ['whole', 'fraction', 'decimal']
+      const newLines = equationTypes.map((equationType, index) => {
+        const generatedEquation = generateEquation(equationType)
+        return {
+          id: `line-${Date.now()}-${index}`,
+          equation: generatedEquation,
+          color: DEFAULT_COLORS[index % DEFAULT_COLORS.length],
+          visible: true,
+          equationType
+        }
+      })
+      setLines(newLines)
     } else {
+      // For other templates, use whole numbers
       const newLines = template.lines.map((equation, index) => ({
         id: `line-${Date.now()}-${index}`,
         equation,
         color: DEFAULT_COLORS[index % DEFAULT_COLORS.length],
-        visible: true
+        visible: true,
+        equationType: 'whole' as const
       }))
       setLines(newLines)
     }
@@ -443,6 +674,18 @@ export default function GraphGenerator() {
                 <CardDescription>Enter equations in form y = mx + b</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <CardDescription>Configure equations and types for each line</CardDescription>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAnswer(!showAnswer)}
+                    className="flex items-center gap-2"
+                  >
+                    {showAnswer ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showAnswer ? 'Hide in Download' : 'Show in Download'}
+                  </Button>
+                </div>
                 {lines.map((line, index) => (
                   <div key={line.id} className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -451,6 +694,9 @@ export default function GraphGenerator() {
                         style={{ backgroundColor: line.color }}
                       />
                       <Label htmlFor={line.id}>Line {index + 1}</Label>
+                      <Badge variant="secondary" className="text-xs">
+                        {line.equationType === 'whole' ? 'Whole Numbers' : line.equationType === 'fraction' ? 'Fractions' : 'Decimals'}
+                      </Badge>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -470,12 +716,28 @@ export default function GraphGenerator() {
                         </Button>
                       )}
                     </div>
-                    <Input
-                      id={line.id}
-                      value={line.equation}
-                      onChange={(e) => updateLine(line.id, e.target.value)}
-                      placeholder="y = mx + b"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id={line.id}
+                        value={line.equation}
+                        onChange={(e) => updateLine(line.id, e.target.value)}
+                        placeholder="y = mx + b"
+                        className="flex-1"
+                      />
+                      <Select 
+                        value={line.equationType} 
+                        onValueChange={(value: 'whole' | 'fraction' | 'decimal') => updateLineType(line.id, value)}
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="whole">Whole</SelectItem>
+                          <SelectItem value="fraction">Fraction</SelectItem>
+                          <SelectItem value="decimal">Decimal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 ))}
               </CardContent>
